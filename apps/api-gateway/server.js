@@ -1,6 +1,9 @@
 import express from "express";
 import fs from "fs";
 import jwt from "jsonwebtoken";
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL);
 
 const app = express();
 app.use(express.json());
@@ -35,6 +38,12 @@ function requireAuth(req, res, next) {
     return res.status(403).json({ error: "invalid token" });
   }
 }
+
+// ping presence (TTL 5 min)
+app.post("/api/v1/heartbeat", requireAuth, async (req, res) => {
+  await redis.set(`presence:${req.user.sub}`, "online", "EX", 300);
+  res.json({ ok: true });
+});
 
 // route protégée d’exemple
 app.get("/api/secure/me", requireAuth, (req, res) => {

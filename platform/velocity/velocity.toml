@@ -1,0 +1,17 @@
+config-version = "2.8"
+bind = "${CFG_BIND}"                     # injecté depuis l'env
+show-max-players = 1000
+online-mode = true
+player-info-forwarding-mode = "${CFG_FORWARDING_MODE}"
+forwarding-secret-file = "forwarding.secret"
+announce-forge = false
+kick-existing-players = true
+force-key-authentication = false
+
+[servers]
+  lobby = "paper-lobby:25565"
+
+try = [ "lobby" ]
+
+[forced-hosts]
+  "localhost" = [ "lobby" ]

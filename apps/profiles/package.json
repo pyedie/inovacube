@@ -1,7 +1,6 @@
 {
-  "name": "api-gateway",
+  "name": "profiles",
   "version": "1.0.0",
-  "private": true,
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -14,6 +13,7 @@
   "dependencies": {
     "express": "^5.1.0",
     "ioredis": "^5.7.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.19.0"
   }
 }

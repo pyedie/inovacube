@@ -38,7 +38,9 @@ services:
 
   auth:
     build: ../apps/auth
-    env_file: ../.env
+    ports:
+      - "3001:3001"
+    env_file: ./.env
     networks: [core, data, edge]
     volumes:
       - ../secrets/jwtRS256.key:/run/keys/jwtRS256.key:ro
@@ -57,7 +59,7 @@ services:
 
   api-gateway:
     build: ../apps/api-gateway
-    env_file: ../.env
+    env_file: ./.env
     depends_on: [mongo, redis, rabbitmq]
     networks: [core, data, edge]
     volumes:
@@ -66,6 +68,7 @@ services:
       JWT_PUBLIC_KEY_FILE: /run/keys/jwtRS256.key.pub
       JWT_ISSUER: inovacube-auth
       JWT_AUDIENCE: inovacube-services
+      REDIS_URL: redis://default:${REDIS_PASS}@redis:6379
     labels:
       - traefik.enable=true
       - traefik.docker.network=inovacube_edge
@@ -76,10 +79,80 @@ services:
       - traefik.http.routers.api-health.rule=PathPrefix(`/healthz`)
       - traefik.http.routers.api-health.entrypoints=web
       - traefik.http.routers.api-health.service=api-gw
+
+  profiles:
+    build: ../apps/profiles
+    ports:
+      - "3002:3002"
+    env_file: ./.env
+    networks: [core, data, edge]
+    volumes:
+      - ../secrets/jwtRS256.key.pub:/run/keys/jwtRS256.key.pub:ro
+    environment:
+      JWT_PUBLIC_KEY_FILE: /run/keys/jwtRS256.key.pub
+      JWT_ISSUER: inovacube-auth
+      JWT_AUDIENCE: inovacube-services
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASS}@mongo:27017/${MONGO_DB}?authSource=admin
+      REDIS_URL: redis://default:${REDIS_PASS}@redis:6379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/livez"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=inovacube_edge
+      - traefik.http.services.profiles-svc.loadbalancer.server.port=3002
+      - traefik.http.routers.profiles.rule=PathPrefix(`/api/v1/me`)
+      - traefik.http.routers.profiles.entrypoints=web
+      - traefik.http.routers.profiles.service=profiles-svc
+
+    # --------- PAPER LOBBY ----------
+  paper-lobby:
+    image: itzg/minecraft-server:java21
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.1"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"          # impératif derrière proxy
+      ENFORCE_SECURE_PROFILE: "FALSE"  # évite les soucis secure-profile avec proxy
+      SERVER_NAME: "Lobby"
+      MOTD: "InovaCube Lobby"
+      ENABLE_COMMAND_BLOCK: "true"
+      VIEW_DISTANCE: 8
+    volumes:
+      - paper_lobby_data:/data
+      - ./paper/paper-global.yml:/config/paper-global.yml:ro
+    networks: [ core ]
+    restart: unless-stopped
+
+
+  # --------- VELOCITY PROXY ----------
+  proxy:
+    image: itzg/mc-proxy:latest
+    depends_on: [ paper-lobby ]
+    ports:
+      - "25565:25577"                      # client -> proxy (bind 25577 côté Velocity)
+    environment:
+      TYPE: "VELOCITY"
+      REPLACE_ENV_VARIABLES: "TRUE"        # remplace ${...} dans /config
+      CFG_BIND: "0.0.0.0:25577"            # on force le bind
+      CFG_FORWARDING_MODE: "modern"
+    volumes:
+      - proxy_data:/server
+      - ./velocity/velocity.toml:/config/velocity.toml:ro
+      - ./velocity/forwarding.secret:/config/forwarding.secret:ro
+    networks: [ core ]
+    restart: unless-stopped
 networks:
   edge: {}
   core: {}
   data: {}
-
+  
 volumes:
   mongo_data: {}
+  redis_data: {}
+  paper_lobby_data: {}
+  proxy_data: {}
