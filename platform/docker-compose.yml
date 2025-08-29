@@ -1,0 +1,85 @@
+version: "3.9"
+name: inovacube
+services:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [edge]
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
+    volumes: [ "mongo_data:/data/db" ]
+    networks: [data]
+
+  redis:
+    image: redis:7
+    command: ["redis-server","--requirepass","${REDIS_PASS}"]
+    networks: [data]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASS}
+    ports: ["15672:15672"]
+    networks: [data,core]
+
+  auth:
+    build: ../apps/auth
+    env_file: ../.env
+    networks: [core, data, edge]
+    volumes:
+      - ../secrets/jwtRS256.key:/run/keys/jwtRS256.key:ro
+      - ../secrets/jwtRS256.key.pub:/run/keys/jwtRS256.key.pub:ro
+    environment:
+      JWT_PRIVATE_KEY_FILE: /run/keys/jwtRS256.key
+      JWT_PUBLIC_KEY_FILE: /run/keys/jwtRS256.key.pub
+      JWT_TTL_MINUTES: "15"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=inovacube_edge
+      - traefik.http.services.auth-svc.loadbalancer.server.port=3001
+      - traefik.http.routers.auth.rule=PathPrefix(`/auth`)
+      - traefik.http.routers.auth.entrypoints=web
+      - traefik.http.routers.auth.service=auth-svc
+
+  api-gateway:
+    build: ../apps/api-gateway
+    env_file: ../.env
+    depends_on: [mongo, redis, rabbitmq]
+    networks: [core, data, edge]
+    volumes:
+      - ../secrets/jwtRS256.key.pub:/run/keys/jwtRS256.key.pub:ro
+    environment:
+      JWT_PUBLIC_KEY_FILE: /run/keys/jwtRS256.key.pub
+      JWT_ISSUER: inovacube-auth
+      JWT_AUDIENCE: inovacube-services
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=inovacube_edge
+      - traefik.http.services.api-gw.loadbalancer.server.port=3000
+      - traefik.http.routers.api.rule=PathPrefix(`/api`)
+      - traefik.http.routers.api.entrypoints=web
+      - traefik.http.routers.api.service=api-gw
+      - traefik.http.routers.api-health.rule=PathPrefix(`/healthz`)
+      - traefik.http.routers.api-health.entrypoints=web
+      - traefik.http.routers.api-health.service=api-gw
+networks:
+  edge: {}
+  core: {}
+  data: {}
+
+volumes:
+  mongo_data: {}
